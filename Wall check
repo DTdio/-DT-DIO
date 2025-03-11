@@ -1,1 +1,260 @@
-ERROR 404
+-- Universal Player Visibility Detector with Mobile GUI
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local TweenService = game:GetService("TweenService")
+local localPlayer = Players.LocalPlayer
+
+local playerDots = {}
+local playerConnections = {}
+local dotsEnabled = true
+
+-- GUI Configuration
+local guiTheme = {
+    mainColor = Color3.fromHex("#2E0249"),
+    accentColor = Color3.fromHex("#5D3FD3"),
+    textColor = Color3.new(1, 1, 1),
+    textSize = 18,
+    buttonSize = UDim2.new(0, 140, 0, 60),
+    borderRadius = UDim.new(0, 12)
+}
+
+-- Create Toggle GUI
+local function createToggleGUI()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "DotToggleGUI"
+    gui.ResetOnSpawn = false
+
+    -- Main container
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(0, 0, 0, 0)
+    container.BackgroundTransparency = 1
+    container.Parent = gui
+
+    -- Visible button frame
+    local frame = Instance.new("Frame")
+    frame.Size = guiTheme.buttonSize
+    frame.BackgroundColor3 = guiTheme.mainColor
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.ZIndex = 2
+    frame.Parent = container
+
+    -- Invisible drag area (3× larger)
+    local dragArea = Instance.new("Frame")
+    dragArea.Size = UDim2.new(
+        0,
+        guiTheme.buttonSize.X.Offset * 3,  -- 3× width
+        0,
+        guiTheme.buttonSize.Y.Offset * 3   -- 3× height
+    )
+    dragArea.Position = UDim2.new(
+        0.5, -dragArea.Size.X.Offset/2,
+        0.5, -dragArea.Size.Y.Offset/2
+    )
+    dragArea.BackgroundTransparency = 1
+    dragArea.Active = true
+    dragArea.ZIndex = 1
+    dragArea.Parent = container
+
+    -- Center visible button in drag area
+    frame.Position = UDim2.new(
+        0.5, -guiTheme.buttonSize.X.Offset/2,
+        0.5, -guiTheme.buttonSize.Y.Offset/2
+    )
+
+    -- Corner rounding
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = guiTheme.borderRadius
+    corner.Parent = frame
+
+    -- Shadow effect
+    local shadow = Instance.new("UIStroke")
+    shadow.Color = Color3.new(0, 0, 0)
+    shadow.Thickness = 3
+    shadow.Parent = frame
+
+    -- Toggle button
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Size = UDim2.new(1, 0, 1, 0)
+    toggleButton.Text = "Disable Dots"
+    toggleButton.TextColor3 = guiTheme.textColor
+    toggleButton.TextSize = guiTheme.textSize
+    toggleButton.Font = Enum.Font.GothamBold
+    toggleButton.BackgroundColor3 = guiTheme.mainColor
+    toggleButton.BorderSizePixel = 0
+    toggleButton.ZIndex = 3
+    toggleButton.Parent = frame
+
+    -- Dragging functionality
+    local dragging = false
+    local dragStart = Vector2.new()
+    local startPos = Vector2.new()
+
+    dragArea.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or
+           input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = container.Position
+        end
+    end)
+
+    dragArea.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or
+           input.UserInputType == Enum.UserInputType.MouseMovement then
+            if dragging then
+                local delta = input.Position - dragStart
+                container.Position = UDim2.new(
+                    startPos.X.Scale,
+                    startPos.X.Offset + delta.X,
+                    startPos.Y.Scale,
+                    startPos.Y.Offset + delta.Y
+                )
+            end
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or
+           input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    -- Toggle functionality
+    toggleButton.Activated:Connect(function()
+        dotsEnabled = not dotsEnabled
+        toggleButton.Text = dotsEnabled and "Disable Dots" or "Enable Dots"
+        
+        TweenService:Create(
+            frame,
+            TweenInfo.new(0.2),
+            {BackgroundColor3 = dotsEnabled and guiTheme.mainColor or guiTheme.accentColor}
+        ):Play()
+
+        -- Immediately show/hide all dots
+        for _, dot in pairs(playerDots) do
+            if dot then
+                dot.Visible = dotsEnabled
+            end
+        end
+    end)
+    
+    -- Initial position (bottom-left with offset for 3× size)
+    container.Position = UDim2.new(
+        0, 20,
+        1, -guiTheme.buttonSize.Y.Offset*3 - 20  -- Adjusted for 3× height
+    )
+    gui.Parent = localPlayer:WaitForChild("PlayerGui")
+end
+
+-- Initialize GUI
+if not localPlayer:FindFirstChild("PlayerGui"):FindFirstChild("DotToggleGUI") then
+    createToggleGUI()
+end
+
+-- Cleanup when players leave
+Players.PlayerRemoving:Connect(function(player)
+    if playerDots[player] then
+        playerDots[player]:Destroy()
+        playerDots[player] = nil
+    end
+    if playerConnections[player] then
+        playerConnections[player]:Disconnect()
+        playerConnections[player] = nil
+    end
+end)
+
+local function createDot(player)
+    local dot = Drawing.new("Circle")
+    dot.Radius = 5
+    dot.Thickness = 2
+    dot.NumSides = 12
+    dot.Visible = false
+    return dot
+end
+
+local function updatePlayer(player)
+    -- Create dot if needed
+    if not playerDots[player] then
+        playerDots[player] = createDot(player)
+    end
+
+    -- Early exit if disabled
+    if not dotsEnabled then
+        playerDots[player].Visible = false
+        return
+    end
+
+    -- Get character with retry
+    local character = player.Character
+    local tries = 0
+    while not character and tries < 10 do
+        task.wait(0.2)
+        character = player.Character
+        tries += 1
+    end
+    
+    if not character or not character:FindFirstChild("Humanoid") then
+        playerDots[player].Visible = false
+        return
+    end
+
+    -- Get target position
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        playerDots[player].Visible = false
+        return
+    end
+
+    -- Raycast setup with proper filtering
+    local filterInstances = {character}
+    if localPlayer.Character then
+        table.insert(filterInstances, localPlayer.Character)
+    end
+    
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = filterInstances
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+    -- Perform raycast
+    local rayResult = workspace:Raycast(
+        Camera.CFrame.Position,
+        hrp.Position - Camera.CFrame.Position,
+        rayParams
+    )
+
+    -- Determine visibility
+    local isVisible = not rayResult or rayResult.Instance:IsDescendantOf(character)
+
+    -- Convert to screen position
+    local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+    if not onScreen then
+        playerDots[player].Visible = false
+        return
+    end
+
+    -- Update dot properties
+    playerDots[player].Position = Vector2.new(screenPos.X, screenPos.Y)
+    playerDots[player].Color = isVisible and Color3.new(0, 1, 0) or Color3.new(1, 0, 0)
+    playerDots[player].Visible = true
+end
+
+-- Track all players
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= localPlayer then
+        playerConnections[player] = player.CharacterAdded:Connect(function()
+            task.wait(1)  -- Increased wait time for character load
+            updatePlayer(player)
+        end)
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == localPlayer then continue end
+        task.spawn(updatePlayer, player)
+    end
+end)
