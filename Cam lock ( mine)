@@ -1,0 +1,177 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local camera = game.Workspace.CurrentCamera
+local camLockEnabled = false
+local selectedTarget = nil
+local targetPart = "Head"
+
+-- GUI Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player:WaitForChild("PlayerGui")
+screenGui.ResetOnSpawn = false
+
+-- Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Parent = screenGui
+mainFrame.Size = UDim2.new(0, 150, 0, 100)
+mainFrame.Position = UDim2.new(0.5, -75, 0.5, -50)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BackgroundTransparency = 0.2
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+
+-- Corner Radius
+local corner = Instance.new("UICorner")
+corner.Parent = mainFrame
+corner.CornerRadius = UDim.new(0, 8)
+
+-- Drop Shadow
+local shadow = Instance.new("ImageLabel")
+shadow.Parent = mainFrame
+shadow.Size = UDim2.new(1, 10, 1, 10)
+shadow.Position = UDim2.new(-0.05, 0, -0.05, 0)
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://5234388158" -- Shadow asset
+shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+shadow.ImageTransparency = 0.8
+shadow.ScaleType = Enum.ScaleType.Slice
+shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+shadow.ZIndex = -1
+
+-- Title Label
+local label = Instance.new("TextLabel")
+label.Parent = mainFrame
+label.Size = UDim2.new(1, 0, 0, 25)
+label.Position = UDim2.new(0, 0, 0, 5)
+label.BackgroundTransparency = 1
+label.Font = Enum.Font.GothamBold
+label.Text = "⚰️ [DT] ⚰️"
+label.TextColor3 = Color3.fromRGB(200, 150, 255)
+label.TextSize = 14
+label.TextXAlignment = Enum.TextXAlignment.Center
+
+-- Animated Button Click Effect
+local function animateButton(button)
+    button.MouseButton1Click:Connect(function()
+        local originalSize = button.Size
+        button:TweenSize(originalSize - UDim2.new(0, 5, 0, 5), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.1, true)
+        wait(0.1)
+        button:TweenSize(originalSize, Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.1, true)
+    end)
+end
+
+-- Part Selector Button
+local partSelector = Instance.new("TextButton")
+partSelector.Parent = mainFrame
+partSelector.Position = UDim2.new(0.1, 0, 0.3, 0)
+partSelector.Size = UDim2.new(0.8, 0, 0, 25)
+partSelector.BackgroundColor3 = Color3.fromRGB(60, 0, 100)
+partSelector.Font = Enum.Font.GothamBold
+partSelector.Text = "🎯 Target: Head"
+partSelector.TextColor3 = Color3.fromRGB(255, 255, 255)
+partSelector.TextSize = 12
+partSelector.AutoButtonColor = false
+partSelector.BorderSizePixel = 0
+
+-- Button Corner Radius
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.Parent = partSelector
+buttonCorner.CornerRadius = UDim.new(0, 6)
+
+animateButton(partSelector)
+
+partSelector.MouseButton1Click:Connect(function()
+    targetPart = (targetPart == "Head") and "Torso" or "Head"
+    partSelector.Text = "🎯 Target: " .. targetPart
+end)
+
+-- Cam Lock Toggle Button
+local camLockButton = Instance.new("TextButton")
+camLockButton.Parent = mainFrame
+camLockButton.Position = UDim2.new(0.1, 0, 0.6, 0)
+camLockButton.Size = UDim2.new(0.8, 0, 0, 25)
+camLockButton.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
+camLockButton.Font = Enum.Font.GothamBold
+camLockButton.Text = "🔒 CamLock: OFF"
+camLockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+camLockButton.TextSize = 12
+camLockButton.AutoButtonColor = false
+camLockButton.BorderSizePixel = 0
+
+-- Button Corner Radius
+local camButtonCorner = Instance.new("UICorner")
+camButtonCorner.Parent = camLockButton
+camButtonCorner.CornerRadius = UDim.new(0, 6)
+
+animateButton(camLockButton)
+
+-- Find Closest Player
+local function getClosestPlayer()
+    local closestPlayer = nil
+    local closestDist = math.huge
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= player and plr.Character and plr.Character:FindFirstChild(targetPart) then
+            local target = plr.Character:FindFirstChild(targetPart)
+            local screenPos, onScreen = camera:WorldToViewportPoint(target.Position)
+            local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+            if onScreen then
+                local distance = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                if distance < closestDist then
+                    closestDist = distance
+                    closestPlayer = plr
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- Lock Camera
+local function lockCamera()
+    if camLockEnabled and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        if not selectedTarget or not selectedTarget.Character then
+            selectedTarget = getClosestPlayer()
+        end
+        if selectedTarget and selectedTarget.Character then
+            local target = selectedTarget.Character:FindFirstChild(targetPart)
+            local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            if target and playerRoot then
+                camera.CFrame = CFrame.lookAt(camera.CFrame.Position, target.Position)
+            end
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if camLockEnabled then
+        lockCamera()
+    end
+end)
+
+-- Toggle CamLock
+camLockButton.MouseButton1Click:Connect(function()
+    camLockEnabled = not camLockEnabled
+    if camLockEnabled then
+        selectedTarget = getClosestPlayer()
+        camLockButton.Text = "🔒 CamLock: ON"
+        camLockButton.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+    else
+        selectedTarget = nil
+        camLockButton.Text = "🔓 CamLock: OFF"
+        camLockButton.BackgroundColor3 = Color3.fromRGB(100, 0, 0)
+    end
+end)
+
+-- GUI Close Animation
+local function closeGUI()
+    local goal = {Size = UDim2.new(0, 10, 0, 10)}
+    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    TweenService:Create(mainFrame, tweenInfo, goal):Play()
+    wait(0.3)
+    mainFrame.Visible = false
+end
